@@ -1,0 +1,21 @@
+C++ extension library:
+
+string.hpp	Robust copy-on-write thread-safe basic_string implementation.
+sstream.hpp	basic_stringbuf implementation that uses advantages of
+		reference counted basic_string.
+format.hpp	Formatting of arguments according to printf-like format-string.
+
+Additional files used by above headers:
+
+atomic.hpp	Atomic exchange/add inline functions (system-dependent).
+iosfwd.hpp	Forward declarations of ext::basic_stringbuf-related classes.
+utility.hpp	Various utility functions and classes.
+hash_map.hpp	Wrapper for vendor-supplied <hash_map> header (only gcc and
+		msvc supported for now).
+type_traits.hpp	Type traits template classes.
+
+Ext library uses following Boost libraries:
+
+    MPL
+    call_traits
+    type_traits
