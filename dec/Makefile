@@ -10,12 +10,18 @@ DEFS = -DEXT_USE_STD_STRING -DNOMINMAX -DUNICODE -D_UNICODE
 CXXFLAGS = -Wall -Wno-unused-local-typedefs -pipe -std=c++11 -mtune=core2 -march=i686 -O2 $(DEFS) $(INCLUDES) -IC:/usr/include
 LDFLAGS =
 LDLIBS = -L$(LIBDIR)/sys++ -lsys++ -lpng -lz
-MSVCFLAGS = //GF //EHsc //GS- //std:c++17 //O2 $(DEFS) $(INCLUDES) -IC:/usr/VC/include
+MSVCFLAGS = //GF //EHsc //GS- //std:c++17 //O2 //W4 $(DEFS) $(INCLUDES) -IC:/usr/VC/include
 MSVC_DEBUG_FLAGS = //EHsc //GS //Zi $(DEFS) $(INCLUDES) -IC:/usr/VC/include
 MSVCLIBSx64 = $(LIBDIR)/sys++/sys++mt_x64.lib zlibstat_x64.lib libpng16_x64.lib
 MSVCLIBSx86 = $(LIBDIR)/sys++/sys++.lib zlibstat_x86.lib libpng16_x86.lib
 
 .SUFFIXES: .o .obj _x64.obj _x86.obj .cc .cpp .c .cs .asm .exe
+
+depias: depias.obj pias_sjis.obj
+	$(MSVC) $(MSVCFLAGS) $^ //Fe$@.exe $(LIBDIR)/sys++/sys++mt.lib
+
+dextt: dextt.obj
+	$(MSVC) $(MSVCFLAGS) $^ //Fe$@.exe $(LIBDIR)/sys++/sys++mt.lib
 
 deuk2: deuk2.obj
 	$(MSVC) $(MSVCFLAGS) $^ //Fe$@.exe $(LIBDIR)/sys++/sys++mt.lib

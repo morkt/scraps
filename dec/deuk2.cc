@@ -51,6 +51,7 @@ public:
     bool is_text () const { return m_type == text; }
     bool is_scalar () const { return m_type == scalar; }
     bool is_string () const { return m_type == str; }
+    bool is_svar () const { return m_type == svar; }
     const std::string& get_text () const { return m_text; }
 
     std::ostream& put (std::ostream& out) const;
@@ -97,7 +98,7 @@ class uk2_reader : public bytecode_reader
     std::vector<std::string>        globals;
 
 public:
-    enum class version { pc98, win };
+    enum class version { concert, satyr, pc98, pc98_1 = pc98, pc98_2, win };
     const version default_version = version::win;
 
 private:
@@ -120,12 +121,15 @@ protected:
 
     bool is_valid () const override
     {
-        return view.size() > 0x18 && 0 == std::memcmp (view.data(), "<< UK2 TEXT Ver1.00 >>", 0x16);
+        return view.size() > 0x18 && (m_version == version::concert || 0 == std::memcmp (view.data(), "<< UK2 TEXT Ver1.00 >>", 0x16));
     }
 
     const uint8_t* start () const override
     {
-        return view.data() + 0x17;
+        if (0 == std::memcmp (view.data(), "<< UK2 TEXT Ver1.00 >>", 0x16))
+            return view.data() + 0x17;
+        else
+            return view.data();
     }
 
 private:
@@ -162,11 +166,21 @@ do_run ()
             break;
         case 1:
             {
+                if (version::concert == m_version)
+                {
+                    if (0 == get<uint8_t> (pBytecode))
+                    {
+                        get_byte();
+                        break;
+                    }
+                }
                 auto arg = get_arg();
                 auto op = get_op();
-                const auto& s = op.get_arg();
-                if (s.is_string() && arg.is_text())
-                    log(ll_text) << parse_text (s.get_text()) << '\n';
+                const auto& op_arg = op.get_arg();
+                if (arg.is_text() && op_arg.is_string())
+                    log(ll_text) << parse_text (op_arg.get_text()) << '\n';
+//                else if (arg.is_svar() && op_arg.is_string())
+//                    log(ll_text) << "OP_01 " << arg << " =\"" << parse_text (op_arg.get_text()) << "\"\n";
                 else
                     log(ll_cmd) << "OP_01 " << arg << op << '\n';
                 break;
@@ -254,10 +268,28 @@ do_run ()
                         log(ll_cmd) << "F0 " << arg << '\n';
                         break;
                     }
+                case 0x4634:
+                    {
+                        auto a1 = get_arg();
+                        auto a2 = get_arg();
+                        auto a3 = get_arg();
+                        auto op = get_op();
+                        auto a4 = get_arg();
+                        auto a5 = get_arg();
+                        log(ll_cmd) << "F4 " << a1 << ',' << a2 << ',' << a3 << op << ',' << a4 << ',' << a5 << '\n';
+                        break;
+                    }
                 case 0x4635:
                     {
                         auto op = get_op();
                         log(ll_debug) << "F5" << op << '\n';
+                        break;
+                    }
+                case 0x4639:
+                    {
+                        log(ll_debug) << "F9";
+                        get_ops (3, log(ll_debug));
+                        log(ll_debug) << '\n';
                         break;
                     }
                 case 0x4641:
@@ -265,6 +297,27 @@ do_run ()
                         log(ll_debug) << "FA";
                         get_ops (5, log(ll_debug));
                         log(ll_debug) << '\n';
+                        break;
+                    }
+                case 0x4642:
+                    {
+                        log(ll_debug) << "FB";
+                        get_ops (5, log(ll_debug));
+                        log(ll_debug) << '\n';
+                        break;
+                    }
+                case 0x4643:
+                case 0x4644:
+                    {
+                        log(ll_debug) << 'F' << static_cast<char> (byteCode16);
+                        get_ops (2, log(ll_debug));
+                        log(ll_debug) << '\n';
+                        break;
+                    }
+                case 0x4647:
+                    {
+                        auto arg = get_arg();
+                        log(ll_cmd) << "FG " << arg << '\n';
                         break;
                     }
                 case 0x4648:
@@ -279,6 +332,18 @@ do_run ()
                         log(ll_debug) << '\n';
                         break;
                     }
+                case 0x4649:
+                    {
+                        auto arg = get_arg();
+                        log(ll_cmd) << "FI " << arg << '\n';
+                        break;
+                    }
+                case 0x464A:
+                    {
+                        log(ll_debug) << "FJ";
+                        get_ops (3, log(ll_debug));
+                        log(ll_debug) << '\n';
+                    }
                 case 0x464B:
                     {
                         log(ll_debug) << "FK\n";
@@ -286,18 +351,55 @@ do_run ()
                     }
                 case 0x4930:
                     {
-                        log(ll_cmd) << "WRITE_SAVE\n";
+                        if (version::pc98_2 == m_version)
+                        {
+                            auto arg = get_arg();
+                            log(ll_cmd) << "I0 " << arg;
+                            get_ops (8, log(ll_cmd));
+                            log(ll_cmd) << '\n';
+                        }
+                        else if (m_version >= version::pc98)
+                        {
+                            log(ll_cmd) << "WRITE_SAVE\n";
+                        }
+                        else
+                        {
+                            log(ll_cmd) << "I0";
+                            get_ops(2, log(ll_cmd));
+                            log(ll_cmd) << '\n';
+                        }
                         break;
                     }
                 case 0x4931:
                     {
-                        log(ll_cmd) << "READ_SAVE\n";
+                        if (m_version >= version::pc98)
+                            log(ll_cmd) << "READ_SAVE\n";
+                        else
+                        {
+                            log(ll_cmd) << "I1";
+                            get_ops(8, log(ll_cmd));
+                            log(ll_cmd) << '\n';
+                        }
                         break;
                     }
                 case 0x4932:
                     {
                         auto op = get_op();
                         log(ll_debug) << "I2" << op << '\n';
+                        break;
+                    }
+                case 0x4933:
+                    {
+                        auto arg = get_arg();
+                        log(ll_debug) << "I3" << arg;
+                        get_ops (1, log(ll_debug));
+                        log(ll_debug) << '\n';
+                        break;
+                    }
+                case 0x4935:
+                    {
+                        auto arg = get_arg();
+                        log(ll_debug) << "I5 " << arg << '\n';
                         break;
                     }
                 case 0x4A30:
@@ -316,8 +418,22 @@ do_run ()
                     }
                 case 0x4A32:
                     {
-                        auto arg = get_arg();
-                        log(ll_text) << "J2 " << arg << '\n';
+                        if (m_version <= version::satyr)
+                        {
+                            auto op = get_op();
+                            log(ll_text) << "J2" << op << '\n';
+                        }
+                        else
+                        {
+                            auto arg = get_arg();
+                            log(ll_text) << "J2 " << arg << '\n';
+                        }
+                        break;
+                    }
+                case 0x4A33:
+                    {
+                        auto op = get_op();
+                        log(ll_cmd) << "J3" << op << '\n';
                         break;
                     }
                 case 0x4C30:
@@ -376,14 +492,22 @@ do_run ()
                     }
                 case 0x4D30:
                     {
-                        auto arg = get_arg();
-                        log(ll_cmd) << "PLAY " << arg << '\n';
+                        if (m_version >= version::pc98)
+                        {
+                            auto arg = get_arg();
+                            log(ll_cmd) << "PLAY " << arg << '\n';
+                        }
+                        else
+                        {
+                            auto op = get_op();
+                            log(ll_cmd) << "PLAY " << op << '\n';
+                        }
                         break;
                     }
                 case 0x4D31:
                     {
                         log(ll_cmd) << "M1";
-                        if (m_version == version::win)
+                        if (m_version >= version::pc98_2)
                             get_ops (1, log(ll_cmd));
                         log(ll_cmd) << '\n';
                         break;
@@ -393,6 +517,12 @@ do_run ()
                         log(ll_cmd) << 'M' << static_cast<char> (byteCode16);
                         get_ops (1, log(ll_cmd));
                         log(ll_cmd) << '\n';
+                        break;
+                    }
+                case 0x4D36:
+                    {
+                        auto arg = get_arg();
+                        log(ll_cmd) << "M6 " << arg << '\n';
                         break;
                     }
                 case 0x4D32:
@@ -413,6 +543,13 @@ do_run ()
                         auto arg = get_arg();
                         auto op = get_op();
                         log(ll_cmd) << "RAND " << arg << op << '\n';
+                        break;
+                    }
+                case 0x5538:
+                    {
+                        log(ll_debug) << "U8";
+                        get_ops (2, log(ll_debug));
+                        log(ll_debug) << '\n';
                         break;
                     }
                 case 0x5549:
@@ -440,24 +577,43 @@ do_run ()
                     {
                         auto op = get_op();
                         log(ll_debug) << "U2" << op << '\n';
-                        for (;;)
+                        if (m_version > version::concert)
                         {
-                            op = get_op();
-                            if (op.empty())
-                                break;
-                            const auto& s = op.get_arg();
-                            if (s.is_string())
-                                log(ll_text) << parse_text (s.get_text()) << '\n';
+                            for (;;)
+                            {
+                                op = get_op();
+                                if (op.empty())
+                                    break;
+                                const auto& s = op.get_arg();
+                                if (s.is_string())
+                                    log(ll_text) << parse_text (s.get_text()) << '\n';
+                                else
+                                    log(ll_debug) << op;
+                            }
+                            if (version::satyr == m_version)
+                            {
+                                // workaround for script day07b.mes
+                                if (get<uint8_t> (pBytecode) == 0x80)
+                                    get_op();
+                            }
                         }
                         break;
                     }
                 case 0x5533:
                     {
                         log(ll_cmd) << "U3";
-                        if (m_version == version::pc98)
+                        if (m_version <= version::pc98_2)
                             get_ops (2, log(ll_cmd));
-                        auto arg = get_arg();
-                        log(ll_cmd) << ' ' << arg << '\n';
+                        if (m_version >= version::pc98)
+                        {
+                            auto arg = get_arg();
+                            log(ll_cmd) << ' ' << arg << '\n';
+                        }
+                        else
+                        {
+                            auto op = get_op();
+                            log(ll_cmd) << op << '\n';
+                        }
                         break;
                     }
                 case 0x5536:
@@ -479,6 +635,12 @@ do_run ()
                         log(ll_debug) << "U9_KEYSTATE -> " << arg;
                         break;
                     }
+                case 0x5541:
+                    {
+                        auto op = get_op();
+                        log(ll_cmd) << "UA" << op << '\n';
+                        break;
+                    }
                 case 0x5542:
                     {
                         auto arg1 = get_arg();
@@ -489,28 +651,41 @@ do_run ()
                 case 0x5543:
                     {
                         auto arg = get_arg();
-                        log(ll_text) << "UC " << arg;
+                        log(ll_text) << "SPRINTF " << arg;
                         for (;;)
                         {
                             auto op = get_op();
                             if (op.empty())
                                 break;
-                            log(ll_text) << op;
+                            const auto& t = op.get_arg();
+                            if (t.is_string())
+                                log(ll_text) << "\"" << parse_text (t.get_text()) << '"';
+                            else
+                                log(ll_text) << op;
                         }
                         log(ll_text) << '\n';
                         break;
                     }
                 case 0x5544:
                     {
-                        auto op = get_op();
-                        auto arg = get_arg();
-                        log(ll_cmd) << "UD" << op << ',' << arg << '\n';
+                        if (m_version >= version::pc98)
+                        {
+                            auto op = get_op();
+                            auto arg = get_arg();
+                            log(ll_cmd) << "UD" << op << ',' << arg << '\n';
+                        }
+                        else
+                        {
+                            auto op1 = get_op();
+                            auto op2 = get_op();
+                            log(ll_cmd) << "UD" << op1 << op2 << '\n';
+                        }
                         break;
                     }
                 case 0x5545:
                     {
                         auto op = get_op();
-                        log(ll_cmd) << "UE" << op;
+                        log(ll_cmd) << "IMAGE" << op;
                         for (;;)
                         {
                             auto op = get_op();
@@ -532,7 +707,30 @@ do_run ()
                     {
                         auto op = get_op();
                         auto arg = get_arg();
-                        log(ll_debug) << "UJ" << op << ',' << arg << '\n';
+                        if (m_version >= version::pc98)
+                        {
+                            log(ll_debug) << "UJ" << op << ',' << arg << '\n';
+                        }
+                        else
+                        {
+                            auto arg2 = get_arg();
+                            log(ll_cmd) << "UJ" << op << ',' << arg << ',' << arg2 << '\n';
+                        }
+                        break;
+                    }
+                case 0x554F:
+                    {
+                        auto op = get_op();
+                        log(ll_debug) << "UO" << op << '\n';
+                        break;
+                    }
+                case 0x5550:
+                    {
+                        log(ll_cmd) << "UP";
+                        get_ops (2, log(ll_cmd));
+                        auto arg1 = get_arg();
+                        auto arg2 = get_arg();
+                        log(ll_cmd) << ',' << arg1 << ',' << arg2 << '\n';
                         break;
                     }
                 case 0x5731:
@@ -556,17 +754,41 @@ do_run ()
                     }
                 case 0x5735:
                     {
-                        auto arg = get_arg();
-                        auto op = get_op();
-                        log(ll_debug) << "W5 " << arg << op << '\n';
+                        if (m_version <= version::concert)
+                        {
+                            auto op = get_op();
+                            log(ll_cmd) << "W5 " << op << '\n';
+                        }
+                        else if (m_version <= version::satyr)
+                        {
+                            auto arg = get_op();
+                            auto op = get_op();
+                            log(ll_cmd) << "W5 " << arg << op << '\n';
+                        }
+                        else
+                        {
+                            auto arg = get_arg();
+                            auto op = get_op();
+                            log(ll_debug) << "W5 " << arg << op << '\n';
+                        }
                         break;
                     }
                 case 0x5736:
                     {
-                        auto op1 = get_op();
-                        auto arg = get_arg();
-                        auto op2 = get_op();
-                        log(ll_cmd) << "W6" << op1 << ',' << arg << ',' << op2 << '\n';
+                        if (m_version >= version::pc98)
+                        {
+                            auto op1 = get_op();
+                            auto arg = get_arg();
+                            auto op2 = get_op();
+                            log(ll_cmd) << "W6" << op1 << ',' << arg << ',' << op2 << '\n';
+                        }
+                        else
+                        {
+                            auto op1 = get_op();
+                            auto op2 = get_op();
+                            auto op3 = get_op();
+                            log(ll_cmd) << "W6" << op1 << op2 << op3 << '\n';
+                        }
                         break;
                     }
                 case 0x5738:
@@ -575,7 +797,7 @@ do_run ()
                         auto op1 = get_op();
                         get_op();
                         get_op();
-                        log(ll_debug) << "W8 " << '\n';
+                        log(ll_debug) << "W8 " << arg << op1 << '\n';
                         for (;;)
                         {
                             auto op = get_op();
@@ -591,10 +813,34 @@ do_run ()
                 case 0x5741:
                 case 0x5743:
                 case 0x5744:
+                case 0x5745:
+                case 0x5746:
                 case 0x5749:
                     {
                         auto op = get_op();
                         log(ll_debug) << 'W' << static_cast<char> (byteCode16) << op << '\n';
+                        break;
+                    }
+                case 0x5742:
+                    {
+                        log(ll_debug) << "WB";
+                        get_ops (5, log(ll_debug));
+                        log(ll_debug) << '\n';
+                        break;
+                    }
+                case 0x574A:
+                    {
+                        auto arg = get_arg();
+                        auto op1 = get_op();
+                        auto op2 = get_op();
+                        log(ll_cmd) << "WJ " << arg << op1 << op2 << '\n';
+                        break;
+                    }
+                case 0x574B:
+                    {
+                        log(ll_debug) << "WK {";
+                        get_ops(6, log(ll_debug));
+                        log(ll_debug) << "}\n";
                         break;
                     }
                 default:
@@ -839,9 +1085,9 @@ get_op ()
     {
         const auto curPos = pBytecode;
         code = get_byte();
+        log(ll_trace) << "[op:" << hex(static_cast<uint8_t>(code)) <<']';
         if (!(code & 0x7F))
             break;
-        log(ll_trace) << "[op:" << hex(static_cast<uint8_t>(code)) <<']';
         auto arg = get_arg();
         switch (code & 0x7F)
         {
@@ -882,6 +1128,7 @@ get_condition (std::ostream& out)
             out << " || ";
         out << op1 << buffer << op2;
         state = get_byte();
+        log(ll_trace)<<"[state:"<<hex(state)<<']';
     }
     while (state);
 }
@@ -918,7 +1165,7 @@ const uint16_t uk2_reader::sjis_table[] = {
 int wmain (int argc, wchar_t* argv[])
 {
     logging log_level = ll_cmd;
-    uk2_reader::version version = uk2_reader::version::win;
+    std::wstring version;
     int argn = 1;
     int last_arg = argc - 1;
     while (argn < last_arg)
@@ -927,9 +1174,19 @@ int wmain (int argc, wchar_t* argv[])
         {
             log_level = ll_debug;
         }
+        else if (0 == std::wcscmp (argv[argn], L"-t"))
+        {
+            log_level = ll_trace;
+        }
         else if (0 == std::wcscmp (argv[argn], L"-p"))
         {
-            version = uk2_reader::version::pc98;
+            ++argn;
+            if (argn >= last_arg)
+            {
+                argn = argc;
+                break;
+            }
+            version = argv[argn];
         }
         else
             break;
@@ -937,15 +1194,34 @@ int wmain (int argc, wchar_t* argv[])
     }
     if (argn >= argc)
     {
-        std::cout << "usage: deuk2 [-v][-p] [START.MES] SCRIPT.MES\n";
+        std::cout << "usage: deuk2 [-v] [-r VERSION] [START.MES] SCRIPT.MES\n"
+                     "    -v            verbose output\n"
+                     "    -p VERSION    set interpreter version (concert/satyr/p1/p2/win)\n"
+                     "                  default is 'win'\n";
         return 0;
     }
     try
     {
         uk2_reader reader;
-        reader.set_version (version);
         reader.set_log_level (ll_none);
-        int last_arg = argc - 1;
+        if (!version.empty())
+        {
+            switch (std::toupper (version[0]))
+            {
+            case 'C': reader.set_version (uk2_reader::version::concert); break;
+            case 'S': reader.set_version (uk2_reader::version::satyr); break;
+            case 'P':
+                if (version[1] == '2')
+                    reader.set_version (uk2_reader::version::pc98_2);
+                else
+                    reader.set_version (uk2_reader::version::pc98_1);
+                break;
+            case 'W': reader.set_version (uk2_reader::version::win); break;
+            default:
+                std::fprintf (stderr, "%S: unknown script version specified\n", version.c_str());
+                return 1;
+            }
+        }
         if (argn < last_arg && 0 != std::wcscmp (argv[argn], argv[argn+1]))
         {
             sys::mapping::readonly start (argv[argn]);

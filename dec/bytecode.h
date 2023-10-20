@@ -139,7 +139,7 @@ protected:
 public:
     bool run ()
     {
-        pBytecodeStart = init();
+        pBytecode = pBytecodeStart = init();
         return do_run();
     }
 
